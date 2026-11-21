@@ -16,6 +16,10 @@
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
+  <!-- Firebase SDK (기존 레시피 앱과 동일한 Compat v9) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+
   <style>
     body {
       -webkit-tap-highlight-color: transparent;
@@ -36,7 +40,10 @@
         <div class="w-9 h-9 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-lg">🥬</div>
         <div>
           <h1 class="font-extrabold text-base text-white leading-tight">냉장고 레이더</h1>
-          <p id="header-sub" class="text-[11px] text-slate-400">소비기한 추적 & AI 냉장고 파먹기</p>
+          <div class="flex items-center space-x-1.5 mt-0.5">
+            <span id="sync-dot" class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            <p id="sync-text" class="text-[11px] text-slate-400">로컬 모드</p>
+          </div>
         </div>
       </div>
       <div class="flex items-center space-x-1.5">
@@ -75,11 +82,9 @@
 
       <!-- 영수증 / 식재료 스캔 배너 -->
       <div class="bg-gradient-to-br from-emerald-600/20 via-slate-900 to-teal-900/20 border border-emerald-500/30 rounded-2xl p-4 space-y-3">
-        <div class="flex items-start justify-between">
-          <div>
-            <h2 class="font-extrabold text-sm text-white">📸 영수증 · 장보기 사진 스캔</h2>
-            <p class="text-xs text-slate-300 mt-0.5">사진 한 장으로 식재료와 소비기한을 자동 등록해요.</p>
-          </div>
+        <div>
+          <h2 class="font-extrabold text-sm text-white">📸 영수증 · 장보기 사진 스캔</h2>
+          <p class="text-xs text-slate-300 mt-0.5">등록한 식재료는 레시피 앱 냉장고와 자동 동기화돼요.</p>
         </div>
         <div class="flex space-x-2">
           <label class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold py-2.5 px-3 rounded-xl text-center cursor-pointer active:scale-95 transition shadow-lg shadow-emerald-950/50">
@@ -133,7 +138,6 @@
 
         <div id="recipe-ingredient-chips" class="flex flex-wrap gap-1.5"></div>
 
-        <!-- 원클릭 취향 필터 칩 -->
         <div class="pt-2 border-t border-slate-800 space-y-2">
           <p class="text-xs font-bold text-slate-300">원클릭 조건 필터 (선택)</p>
           <div id="recipe-filter-chips" class="flex flex-wrap gap-1.5"></div>
@@ -144,13 +148,11 @@
         </button>
       </div>
 
-      <!-- 레시피 로딩 -->
       <div id="recipe-loading" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-2.5">
         <div class="inline-block w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
         <p class="text-xs text-slate-300">집에 있는 양념으로 뚝딱 만들 수 있는 메뉴를 조합 중이에요...</p>
       </div>
 
-      <!-- 추천 결과 -->
       <div id="recipe-results" class="space-y-3"></div>
 
     </section>
@@ -177,7 +179,7 @@
         <span class="text-lg">🍳</span>
         <span class="text-[11px] font-bold mt-0.5">냉장고 파먹기</span>
       </button>
-      <button onclick="switchTab('saved')" id="tab-saved" class="flex flex-col items-center text-slate-500 relative">
+      <button onclick="switchTab('saved')" id="tab-saved" class="flex flex-col items-center text-slate-500">
         <span class="text-lg">⭐</span>
         <span class="text-[11px] font-bold mt-0.5">레시피 보관함</span>
       </button>
@@ -212,7 +214,7 @@
       <div class="space-y-3 text-xs">
         <div>
           <label class="block font-bold text-slate-300 mb-1">식재료 이름</label>
-          <input type="text" id="add-name" placeholder="예: 두부 1모, 대파, 계란" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white outline-none focus:border-emerald-500">
+          <input type="text" id="add-name" placeholder="예: 두부, 대파, 계란" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white outline-none focus:border-emerald-500">
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
@@ -237,32 +239,49 @@
     </div>
   </div>
 
-  <!-- 설정 모달 (Gemini API 키 보관) -->
+  <!-- 설정 모달 (Gemini AI + 기존 레시피 앱 Firebase 연동) -->
   <div id="settings-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm p-5 space-y-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-5 space-y-4">
       <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-        <h3 class="font-extrabold text-base text-white">⚙️ Gemini AI 설정</h3>
+        <h3 class="font-extrabold text-base text-white">⚙️ AI & 레시피 앱 연동 설정</h3>
         <button onclick="closeSettings()" class="text-slate-400 text-lg">✕</button>
       </div>
-      <div class="space-y-3 text-xs">
+
+      <!-- 섹션 1: Gemini API -->
+      <div class="space-y-2.5 text-xs">
+        <p class="font-extrabold text-emerald-400">1. Gemini AI (영수증 스캔 · 냉파 레시피)</p>
         <div>
           <label class="block font-bold text-slate-300 mb-1">Gemini API Key</label>
-          <input type="password" id="input-api-key" placeholder="AIzaSy..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white outline-none focus:border-emerald-500">
-          <p class="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-            Google AI Studio에서 무료 발급받은 키를 입력하세요. 키는 서버로 전송되지 않고 내 스마트폰 브라우저에만 안전하게 저장됩니다.
-          </p>
+          <input type="password" id="input-api-key" placeholder="AIzaSy..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none focus:border-emerald-500">
         </div>
         <div>
           <label class="block font-bold text-slate-300 mb-1">사용 모델</label>
-          <select id="input-model" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white outline-none">
-            <option value="gemini-2.5-flash">gemini-2.5-flash (추천 · 빠르고 정확)</option>
+          <select id="input-model" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
+            <option value="gemini-2.5-flash">gemini-2.5-flash (추천)</option>
             <option value="gemini-2.0-flash">gemini-2.0-flash</option>
           </select>
         </div>
       </div>
-      <div class="flex space-x-2">
-        <button onclick="clearAllData()" class="flex-1 bg-rose-950/60 border border-rose-800/50 text-rose-300 py-2.5 rounded-xl font-bold text-xs">데이터 초기화</button>
-        <button onclick="saveSettings()" class="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl font-extrabold text-xs">저장하기</button>
+
+      <!-- 섹션 2: 기존 레시피 앱 Firebase 연동 -->
+      <div class="space-y-2.5 text-xs pt-3 border-t border-slate-800">
+        <p class="font-extrabold text-sky-400">2. 기존 레시피 앱 냉장고 실시간 연동</p>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          레시피 앱에 넣었던 <strong>방 코드</strong>와 <strong>firebaseConfig</strong>를 그대로 붙여넣으면 두 앱의 냉장고가 양방향으로 실시간 동기화됩니다.
+        </p>
+        <div>
+          <label class="block font-bold text-slate-300 mb-1">우리 가족 방 코드 (Room ID)</label>
+          <input type="text" id="input-room-id" placeholder="home-kitchen-sync" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-sky-500">
+        </div>
+        <div>
+          <label class="block font-bold text-slate-300 mb-1">Firebase Config 코드 붙여넣기</label>
+          <textarea id="input-firebase-config" rows="4" placeholder="const firebaseConfig = { apiKey: '...', projectId: '...' };" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-[11px] font-mono text-white outline-none focus:border-sky-500"></textarea>
+        </div>
+      </div>
+
+      <div class="flex space-x-2 pt-1">
+        <button onclick="clearAllData()" class="flex-1 bg-rose-950/60 border border-rose-800/50 text-rose-300 py-2.5 rounded-xl font-bold text-xs">초기화</button>
+        <button onclick="saveSettings()" class="flex-[2] bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-extrabold text-xs">저장 및 연동하기</button>
       </div>
     </div>
   </div>
@@ -271,7 +290,7 @@
   <div id="toast" class="fixed top-16 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-700 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-2xl z-50 hidden transition"></div>
 
   <script>
-    // 단일 파일 내장 PWA Manifest (Data URI)
+    // 단일 파일 내장 PWA Manifest
     (function initManifest() {
       const manifest = {
         name: "냉장고 레이더 - AI 소비기한 & 냉파",
@@ -290,16 +309,22 @@
       if (el) el.href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifest));
     })();
 
-    // 상태 관리
+    // 로컬 스토리지 키
     const STORE_ITEMS = 'fridge_radar_items_v1';
     const STORE_SAVED = 'fridge_radar_saved_recipes_v1';
     const STORE_KEY = 'fridge_radar_gemini_key';
     const STORE_MODEL = 'fridge_radar_gemini_model';
+    const STORE_ROOM = 'kitchen_room_id';
+    const STORE_FB = 'kitchen_firebase_config';
 
-    let fridgeItems = JSON.parse(localStorage.getItem(STORE_ITEMS) || '[]');
+    let fridgeDetails = JSON.parse(localStorage.getItem(STORE_ITEMS) || '[]');
     let savedRecipes = JSON.parse(localStorage.getItem(STORE_SAVED) || '[]');
     let apiKey = localStorage.getItem(STORE_KEY) || '';
     let modelName = localStorage.getItem(STORE_MODEL) || 'gemini-2.5-flash';
+    let roomId = localStorage.getItem(STORE_ROOM) || 'home-kitchen-sync';
+
+    let db = null;
+    let isRemoteUpdating = false;
 
     let currentStorageFilter = 'ALL';
     let selectedItemIds = new Set();
@@ -340,9 +365,116 @@
       return Math.round((target - today) / (1000 * 60 * 60 * 24));
     }
 
-    function saveState() {
-      localStorage.setItem(STORE_ITEMS, JSON.stringify(fridgeItems));
+    function saveLocalOnly() {
+      localStorage.setItem(STORE_ITEMS, JSON.stringify(fridgeDetails));
       localStorage.setItem(STORE_SAVED, JSON.stringify(savedRecipes));
+    }
+
+    // ==================== Firebase 양방향 동기화 (기존 레시피 앱 호환) ====================
+    function parseFirebaseConfig(raw) {
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch (e) {
+        const extract = (key) => {
+          const regex = new RegExp(key + '\\s*:\\s*["\']([^"\']+)["\']');
+          const match = raw.match(regex);
+          return match ? match[1] : undefined;
+        };
+        const apiKeyVal = extract('apiKey');
+        const projectIdVal = extract('projectId');
+        if (!apiKeyVal || !projectIdVal) return null;
+        return {
+          apiKey: apiKeyVal,
+          authDomain: extract('authDomain') || (projectIdVal + '.firebaseapp.com'),
+          projectId: projectIdVal,
+          storageBucket: extract('storageBucket'),
+          messagingSenderId: extract('messagingSenderId'),
+          appId: extract('appId')
+        };
+      }
+    }
+
+    function initFirebase() {
+      const rawConfig = localStorage.getItem(STORE_FB);
+      const config = parseFirebaseConfig(rawConfig);
+      if (!config) return;
+
+      try {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(config);
+        }
+        db = firebase.firestore();
+        document.getElementById('sync-dot').className = 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse';
+        document.getElementById('sync-text').textContent = `레시피 앱 연동 중 (${roomId})`;
+
+        db.collection('kitchen_rooms').doc(roomId).onSnapshot((doc) => {
+          if (!doc.exists) {
+            syncToCloud();
+            return;
+          }
+          isRemoteUpdating = true;
+          const data = doc.data();
+
+          // 1) 기존 상세 목록 불러오기
+          let merged = Array.isArray(data.fridgeDetails) ? [...data.fridgeDetails] : [];
+
+          // 2) 기존 레시피 앱의 단순 문자열 목록(fridgeItems)과 양방향 병합
+          if (Array.isArray(data.fridgeItems)) {
+            const recipeAppNames = data.fridgeItems.map(s => String(s || '').trim()).filter(Boolean);
+            const nameSet = new Set(recipeAppNames);
+
+            // 레시피 앱에서 삭제된 항목은 레이더에서도 제거
+            merged = merged.filter(item => nameSet.has(String(item.name || '').trim()));
+
+            // 레시피 앱에서 새로 추가된 항목은 기본값(냉장, D-7)으로 자동 생성
+            const existingNames = new Set(merged.map(item => String(item.name || '').trim()));
+            recipeAppNames.forEach((name, idx) => {
+              if (!existingNames.has(name)) {
+                merged.push({
+                  id: 'sync_' + Date.now() + '_' + idx,
+                  name,
+                  quantity: '',
+                  storage: '냉장',
+                  expiryDate: addDaysToToday(7)
+                });
+                existingNames.add(name);
+              }
+            });
+          }
+
+          fridgeDetails = merged;
+          if (Array.isArray(data.radarSavedRecipes)) {
+            savedRecipes = data.radarSavedRecipes;
+          }
+
+          saveLocalOnly();
+          renderFridge();
+          if (!document.getElementById('view-recipe').classList.contains('hidden')) renderRecipeBuilder();
+          if (!document.getElementById('view-saved').classList.contains('hidden')) renderSavedRecipes();
+          isRemoteUpdating = false;
+        }, (err) => {
+          console.error('Firestore 구독 오류:', err);
+          document.getElementById('sync-dot').className = 'w-1.5 h-1.5 rounded-full bg-rose-500';
+          document.getElementById('sync-text').textContent = '연동 오류 (규칙/설정 확인)';
+        });
+      } catch (err) {
+        console.error('Firebase 초기화 실패:', err);
+      }
+    }
+
+    function syncToCloud() {
+      saveLocalOnly();
+      if (db && !isRemoteUpdating) {
+        // 기존 레시피 앱이 읽는 단순 문자열 배열(fridgeItems) 동시 갱신
+        const simpleNames = [...new Set(fridgeDetails.map(i => String(i.name || '').trim()).filter(Boolean))];
+        db.collection('kitchen_rooms').doc(roomId).set({
+          fridgeItems: simpleNames,
+          fridgeDetails: fridgeDetails,
+          radarSavedRecipes: savedRecipes,
+          updatedAt: new Date().toISOString()
+        }, { merge: true }).catch(e => console.error('클라우드 저장 실패:', e));
+      }
     }
 
     function updateApiDot() {
@@ -377,7 +509,7 @@
 
     // 냉장고 리스트 렌더링
     function renderFridge() {
-      const sorted = [...fridgeItems].sort((a, b) => getDaysLeft(a.expiryDate) - getDaysLeft(b.expiryDate));
+      const sorted = [...fridgeDetails].sort((a, b) => getDaysLeft(a.expiryDate) - getDaysLeft(b.expiryDate));
       const urgentCount = sorted.filter(i => getDaysLeft(i.expiryDate) <= 2).length;
       const soonCount = sorted.filter(i => { const d = getDaysLeft(i.expiryDate); return d >= 3 && d <= 5; }).length;
 
@@ -395,7 +527,7 @@
           <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-8 text-center space-y-1.5">
             <p class="text-2xl">🧺</p>
             <p class="text-xs font-bold text-slate-300">등록된 식재료가 아직 없어요</p>
-            <p class="text-[11px] text-slate-500">위에서 영수증을 찍거나 [✨ 데모 체험]을 눌러보세요.</p>
+            <p class="text-[11px] text-slate-500">영수증을 찍거나 ⚙️ 설정에서 기존 레시피 앱을 연동해 보세요.</p>
           </div>`;
       } else {
         listEl.innerHTML = filtered.map(item => {
@@ -459,7 +591,7 @@
     }
 
     function selectUrgentItems(isRecipeTab = false) {
-      const urgent = fridgeItems.filter(i => getDaysLeft(i.expiryDate) <= 5);
+      const urgent = fridgeDetails.filter(i => getDaysLeft(i.expiryDate) <= 5);
       if (urgent.length === 0) {
         showToast('5일 이내 임박 재료가 없어요.');
         return;
@@ -470,37 +602,33 @@
       else renderFridge();
     }
 
-    function goToRecipeWithSelected() {
-      switchTab('recipe');
-    }
+    function goToRecipeWithSelected() { switchTab('recipe'); }
 
     function consumeItem(id) {
-      fridgeItems = fridgeItems.filter(i => i.id !== id);
+      fridgeDetails = fridgeDetails.filter(i => i.id !== id);
       selectedItemIds.delete(id);
-      saveState();
+      syncToCloud();
       renderFridge();
       showToast('소비 완료 처리했어요!');
     }
 
     function extendDays(id, days) {
-      const target = fridgeItems.find(i => i.id === id);
+      const target = fridgeDetails.find(i => i.id === id);
       if (!target) return;
       const d = new Date(target.expiryDate + 'T00:00:00');
       d.setDate(d.getDate() + days);
       target.expiryDate = d.toISOString().slice(0, 10);
-      saveState();
+      syncToCloud();
       renderFridge();
       showToast(`소비기한을 ${days}일 연장했어요.`);
     }
 
     function moveToFreezer(id) {
-      const target = fridgeItems.find(i => i.id === id);
+      const target = fridgeDetails.find(i => i.id === id);
       if (!target) return;
       target.storage = '냉동';
-      const d = new Date();
-      d.setDate(d.getDate() + 30);
-      target.expiryDate = d.toISOString().slice(0, 10);
-      saveState();
+      target.expiryDate = addDaysToToday(30);
+      syncToCloud();
       renderFridge();
       showToast('냉동 보관으로 옮기고 +30일 설정했어요.');
     }
@@ -520,8 +648,7 @@
             const canvas = document.createElement('canvas');
             canvas.width = w; canvas.height = h;
             canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-            resolve(dataUrl.split(',')[1]);
+            resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
           };
           img.onerror = reject;
           img.src = e.target.result;
@@ -569,17 +696,16 @@
 비식품(봉투, 세제, 휴지 등)은 제외하고 식재료만 추출해서 아래 JSON 배열 형식으로만 응답하세요.
 [
   {
-    "name": "식재료명 (브랜드명 빼고 깔끔하게, 예: 두부, 애호박, 돼지고기 앞다리살)",
+    "name": "식재료명 (브랜드명 빼고 깔끔하게, 예: 두부, 애호박, 돼지고기)",
     "quantity": "수량 또는 중량 (알 수 없으면 빈 문자열)",
     "storage": "냉장 또는 냉동 또는 실온",
-    "shelfLifeDays": 평균 권장 소비기한 일수(정수, 예: 두부 5, 대파 7, 삼겹살 3, 계란 21)
+    "shelfLifeDays": 평균 권장 소비기한 일수(정수)
   }
 ]`;
         const extracted = await callGeminiAPI([
           { text: prompt },
           { inlineData: { mimeType: 'image/jpeg', data: base64 } }
         ]);
-
         if (!Array.isArray(extracted) || extracted.length === 0) {
           showToast('사진에서 식재료를 찾지 못했어요.');
           return;
@@ -592,16 +718,14 @@
       }
     }
 
-    // API 키 없이 써볼 수 있는 데모 스캔
     function loadDemoReceipt() {
-      const demo = [
-        { name: '찌개용 두부', quantity: '1모', storage: '냉장', shelfLifeDays: 2 },
+      openReviewModal([
+        { name: '두부', quantity: '1모', storage: '냉장', shelfLifeDays: 2 },
         { name: '대파', quantity: '1단', storage: '냉장', shelfLifeDays: 5 },
-        { name: '돼지고기 앞다리살', quantity: '400g', storage: '냉장', shelfLifeDays: 1 },
+        { name: '돼지고기', quantity: '400g', storage: '냉장', shelfLifeDays: 1 },
         { name: '계란', quantity: '10구', storage: '냉장', shelfLifeDays: 14 },
         { name: '애호박', quantity: '1개', storage: '냉장', shelfLifeDays: 4 }
-      ];
-      openReviewModal(demo);
+      ]);
     }
 
     function openReviewModal(items) {
@@ -637,14 +761,12 @@
       `).join('');
     }
 
-    function closeReviewModal() {
-      document.getElementById('review-modal').classList.add('hidden');
-    }
+    function closeReviewModal() { document.getElementById('review-modal').classList.add('hidden'); }
 
     function confirmReviewedItems() {
       const chosen = pendingReviewItems.filter(it => it.checked && it.name.trim());
       chosen.forEach(it => {
-        fridgeItems.push({
+        fridgeDetails.push({
           id: 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
           name: it.name.trim(),
           quantity: it.quantity,
@@ -652,10 +774,10 @@
           expiryDate: it.expiryDate
         });
       });
-      saveState();
+      syncToCloud();
       closeReviewModal();
       renderFridge();
-      showToast(`${chosen.length}개 식재료를 냉장고에 등록했어요!`);
+      showToast(`${chosen.length}개 식재료를 등록했어요!`);
     }
 
     // ==================== 직접 추가 ====================
@@ -670,14 +792,14 @@
     function saveManualItem() {
       const name = document.getElementById('add-name').value.trim();
       if (!name) return alert('식재료 이름을 입력해 주세요.');
-      fridgeItems.push({
+      fridgeDetails.push({
         id: 'item_' + Date.now(),
         name,
         quantity: document.getElementById('add-qty').value.trim(),
         storage: document.getElementById('add-storage').value,
         expiryDate: document.getElementById('add-expiry').value || addDaysToToday(7)
       });
-      saveState();
+      syncToCloud();
       closeAddModal();
       renderFridge();
       showToast(`${name} 등록 완료!`);
@@ -686,7 +808,7 @@
     // ==================== AI 냉장고 파먹기 ====================
     function renderRecipeBuilder() {
       const ingBox = document.getElementById('recipe-ingredient-chips');
-      const sorted = [...fridgeItems].sort((a, b) => getDaysLeft(a.expiryDate) - getDaysLeft(b.expiryDate));
+      const sorted = [...fridgeDetails].sort((a, b) => getDaysLeft(a.expiryDate) - getDaysLeft(b.expiryDate));
 
       if (sorted.length === 0) {
         ingBox.innerHTML = `<p class="text-xs text-slate-500">먼저 소비기한 레이더에 식재료를 등록해 주세요.</p>`;
@@ -725,7 +847,7 @@
     }
 
     async function generateRecipes() {
-      const chosenItems = fridgeItems.filter(i => selectedItemIds.has(i.id));
+      const chosenItems = fridgeDetails.filter(i => selectedItemIds.has(i.id));
       if (chosenItems.length === 0) {
         showToast('사용할 식재료를 1개 이상 선택해 주세요!');
         return;
@@ -739,7 +861,6 @@
       const ingNames = chosenItems.map(i => i.name).join(', ');
       const filters = [...activeRecipeFilters].join(', ') || '제한 없음';
 
-      // API 키가 없을 경우 데모 레시피 제공
       if (!apiKey) {
         setTimeout(() => {
           loading.classList.add('hidden');
@@ -810,16 +931,13 @@
                 ${isSavedView ? '삭제' : (isSaved ? '⭐ 저장됨' : '☆ 저장')}
               </button>
             </div>
-
             <div class="text-xs space-y-1.5 bg-slate-950 rounded-xl p-3 border border-slate-800/80">
               <p><span class="text-emerald-400 font-bold">냉장고 재료:</span> <span class="text-slate-200">${(r.usedIngredients || []).map(escapeHtml).join(', ')}</span></p>
               <p><span class="text-slate-400 font-bold">기본 양념:</span> <span class="text-slate-300">${(r.seasonings || []).map(escapeHtml).join(', ')}</span></p>
             </div>
-
             <ol class="space-y-1.5 text-xs text-slate-200 list-decimal list-inside leading-relaxed">
               ${(r.steps || []).map(s => `<li>${escapeHtml(s)}</li>`).join('')}
             </ol>
-
             ${r.tip ? `<p class="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">💡 ${escapeHtml(r.tip)}</p>` : ''}
           </div>`;
       }).join('');
@@ -836,13 +954,13 @@
         savedRecipes.unshift(r);
         showToast('레시피 보관함에 저장했어요!');
       }
-      saveState();
+      syncToCloud();
       renderRecipeCards(lastGeneratedRecipes, document.getElementById('recipe-results'), false);
     }
 
     function removeSavedRecipe(idx) {
       savedRecipes.splice(idx, 1);
-      saveState();
+      syncToCloud();
       renderSavedRecipes();
       showToast('레시피를 삭제했어요.');
     }
@@ -856,24 +974,31 @@
     function openSettings() {
       document.getElementById('input-api-key').value = apiKey;
       document.getElementById('input-model').value = modelName;
+      document.getElementById('input-room-id').value = roomId;
+      document.getElementById('input-firebase-config').value = localStorage.getItem(STORE_FB) || '';
       document.getElementById('settings-modal').classList.remove('hidden');
     }
     function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); }
     function saveSettings() {
       apiKey = document.getElementById('input-api-key').value.trim();
       modelName = document.getElementById('input-model').value;
+      roomId = document.getElementById('input-room-id').value.trim() || 'home-kitchen-sync';
+      const fbConfig = document.getElementById('input-firebase-config').value.trim();
+
       localStorage.setItem(STORE_KEY, apiKey);
       localStorage.setItem(STORE_MODEL, modelName);
-      updateApiDot();
+      localStorage.setItem(STORE_ROOM, roomId);
+      localStorage.setItem(STORE_FB, fbConfig);
+
       closeSettings();
-      showToast('설정이 저장되었습니다.');
+      location.reload();
     }
     function clearAllData() {
-      if (!confirm('저장된 식재료와 레시피를 모두 삭제할까요?')) return;
-      fridgeItems = [];
+      if (!confirm('이 기기에 저장된 식재료와 레시피를 모두 비울까요? (연동 중이면 클라우드 냉장고도 함께 비워집니다)')) return;
+      fridgeDetails = [];
       savedRecipes = [];
       selectedItemIds.clear();
-      saveState();
+      syncToCloud();
       closeSettings();
       renderFridge();
       showToast('모든 데이터를 초기화했어요.');
@@ -881,6 +1006,7 @@
 
     // 초기화
     updateApiDot();
+    initFirebase();
     renderFridge();
   </script>
 </body>
