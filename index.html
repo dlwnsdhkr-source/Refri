@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>냉장고 레이더 - AI 소비기한 & 냉파</title>
+
+  <!-- 모바일 전체 화면 (PWA Standalone) 설정 -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="냉장고레이더">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0f172a">
+  <link id="pwa-manifest" rel="manifest" href="">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    body {
+      -webkit-tap-highlight-color: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, sans-serif;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+    }
+    .scrollbar-none::-webkit-scrollbar { display: none; }
+    .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen select-none">
+
+  <!-- 상단 헤더 -->
+  <header class="bg-slate-950/90 backdrop-blur border-b border-slate-800 sticky top-0 z-30 px-4 py-3">
+    <div class="max-w-md mx-auto flex items-center justify-between">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-9 h-9 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-lg">🥬</div>
+        <div>
+          <h1 class="font-extrabold text-base text-white leading-tight">냉장고 레이더</h1>
+          <p id="header-sub" class="text-[11px] text-slate-400">소비기한 추적 & AI 냉장고 파먹기</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <button onclick="openAddModal()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold px-2.5 py-1.5 rounded-xl active:scale-95 transition">
+          + 직접추가
+        </button>
+        <button onclick="openSettings()" class="p-2 text-slate-400 hover:text-white rounded-xl text-lg relative" aria-label="설정">
+          ⚙️
+          <span id="api-dot" class="hidden absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 메인 컨테이너 -->
+  <main class="max-w-md mx-auto p-4 space-y-4">
+
+    <!-- ==================== 탭 1: 냉장고 레이더 ==================== -->
+    <section id="view-fridge" class="space-y-4">
+
+      <!-- 요약 대시보드 카드 -->
+      <div class="grid grid-cols-3 gap-2">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 text-center">
+          <p class="text-[11px] text-slate-400 font-semibold">전체 재료</p>
+          <p id="stat-total" class="text-xl font-extrabold text-white mt-0.5">0</p>
+        </div>
+        <div class="bg-rose-950/40 border border-rose-800/50 rounded-2xl p-3 text-center">
+          <p class="text-[11px] text-rose-300 font-semibold">긴급 (D-2↓)</p>
+          <p id="stat-urgent" class="text-xl font-extrabold text-rose-400 mt-0.5">0</p>
+        </div>
+        <div class="bg-amber-950/30 border border-amber-800/40 rounded-2xl p-3 text-center">
+          <p class="text-[11px] text-amber-300 font-semibold">주의 (D-5↓)</p>
+          <p id="stat-soon" class="text-xl font-extrabold text-amber-400 mt-0.5">0</p>
+        </div>
+      </div>
+
+      <!-- 영수증 / 식재료 스캔 배너 -->
+      <div class="bg-gradient-to-br from-emerald-600/20 via-slate-900 to-teal-900/20 border border-emerald-500/30 rounded-2xl p-4 space-y-3">
+        <div class="flex items-start justify-between">
+          <div>
+            <h2 class="font-extrabold text-sm text-white">📸 영수증 · 장보기 사진 스캔</h2>
+            <p class="text-xs text-slate-300 mt-0.5">사진 한 장으로 식재료와 소비기한을 자동 등록해요.</p>
+          </div>
+        </div>
+        <div class="flex space-x-2">
+          <label class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold py-2.5 px-3 rounded-xl text-center cursor-pointer active:scale-95 transition shadow-lg shadow-emerald-950/50">
+            📷 사진 찍기 / 선택
+            <input type="file" id="receipt-input" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+          </label>
+          <button onclick="loadDemoReceipt()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold py-2.5 px-3 rounded-xl active:scale-95 transition">
+            ✨ 데모 체험
+          </button>
+        </div>
+        <div id="scan-loading" class="hidden flex items-center justify-center space-x-2 bg-slate-950/70 rounded-xl p-3">
+          <div class="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+          <span class="text-xs text-emerald-300 font-semibold">AI가 영수증에서 식재료를 분석하고 있어요...</span>
+        </div>
+      </div>
+
+      <!-- 보관함 필터 & 임박 선택 바 -->
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex space-x-1.5 overflow-x-auto scrollbar-none">
+          <button onclick="setStorageFilter('ALL')" data-filter="ALL" class="filter-btn px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-600 text-white shrink-0">전체</button>
+          <button onclick="setStorageFilter('냉장')" data-filter="냉장" class="filter-btn px-3 py-1.5 rounded-full text-xs font-bold bg-slate-900 text-slate-400 border border-slate-800 shrink-0">❄️ 냉장</button>
+          <button onclick="setStorageFilter('냉동')" data-filter="냉동" class="filter-btn px-3 py-1.5 rounded-full text-xs font-bold bg-slate-900 text-slate-400 border border-slate-800 shrink-0">🧊 냉동</button>
+          <button onclick="setStorageFilter('실온')" data-filter="실온" class="filter-btn px-3 py-1.5 rounded-full text-xs font-bold bg-slate-900 text-slate-400 border border-slate-800 shrink-0">🧺 실온</button>
+        </div>
+        <button onclick="selectUrgentItems()" class="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 shrink-0">
+          임박 자동선택
+        </button>
+      </div>
+
+      <!-- 식재료 리스트 -->
+      <div id="fridge-list" class="space-y-2.5"></div>
+
+      <!-- 선택된 재료로 바로 냉파 이동 플로팅 바 -->
+      <div id="selected-bar" class="hidden fixed bottom-20 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-md z-20">
+        <button onclick="goToRecipeWithSelected()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm py-3.5 px-4 rounded-2xl shadow-2xl shadow-emerald-950 flex items-center justify-between active:scale-[0.99] transition">
+          <span id="selected-bar-text">선택한 재료로 레시피 추천받기</span>
+          <span>🍳 →</span>
+        </button>
+      </div>
+
+    </section>
+
+    <!-- ==================== 탭 2: AI 냉장고 파먹기 ==================== -->
+    <section id="view-recipe" class="hidden space-y-4">
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3.5">
+        <div class="flex items-center justify-between">
+          <h2 class="font-extrabold text-sm text-white">🥘 사용할 재료 선택</h2>
+          <button onclick="selectUrgentItems(true)" class="text-[11px] font-bold text-emerald-400">임박 재료만 담기</button>
+        </div>
+
+        <div id="recipe-ingredient-chips" class="flex flex-wrap gap-1.5"></div>
+
+        <!-- 원클릭 취향 필터 칩 -->
+        <div class="pt-2 border-t border-slate-800 space-y-2">
+          <p class="text-xs font-bold text-slate-300">원클릭 조건 필터 (선택)</p>
+          <div id="recipe-filter-chips" class="flex flex-wrap gap-1.5"></div>
+        </div>
+
+        <button onclick="generateRecipes()" id="btn-gen-recipe" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm py-3 rounded-xl shadow-lg active:scale-[0.99] transition">
+          ✨ AI 맞춤 레시피 3개 추천받기
+        </button>
+      </div>
+
+      <!-- 레시피 로딩 -->
+      <div id="recipe-loading" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-2.5">
+        <div class="inline-block w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+        <p class="text-xs text-slate-300">집에 있는 양념으로 뚝딱 만들 수 있는 메뉴를 조합 중이에요...</p>
+      </div>
+
+      <!-- 추천 결과 -->
+      <div id="recipe-results" class="space-y-3"></div>
+
+    </section>
+
+    <!-- ==================== 탭 3: 저장된 레시피 ==================== -->
+    <section id="view-saved" class="hidden space-y-3">
+      <div class="flex items-center justify-between px-1">
+        <h2 class="font-extrabold text-sm text-white">⭐ 저장해 둔 냉파 레시피</h2>
+        <span id="saved-count-label" class="text-xs text-slate-400">0개</span>
+      </div>
+      <div id="saved-recipes-list" class="space-y-3"></div>
+    </section>
+
+  </main>
+
+  <!-- 하단 네비게이션 -->
+  <nav class="fixed bottom-0 left-0 right-0 bg-slate-950/95 backdrop-blur border-t border-slate-800 z-30" style="padding-bottom: env(safe-area-inset-bottom);">
+    <div class="max-w-md mx-auto grid grid-cols-3 py-2">
+      <button onclick="switchTab('fridge')" id="tab-fridge" class="flex flex-col items-center text-emerald-400">
+        <span class="text-lg">🧊</span>
+        <span class="text-[11px] font-bold mt-0.5">소비기한 레이더</span>
+      </button>
+      <button onclick="switchTab('recipe')" id="tab-recipe" class="flex flex-col items-center text-slate-500">
+        <span class="text-lg">🍳</span>
+        <span class="text-[11px] font-bold mt-0.5">냉장고 파먹기</span>
+      </button>
+      <button onclick="switchTab('saved')" id="tab-saved" class="flex flex-col items-center text-slate-500 relative">
+        <span class="text-lg">⭐</span>
+        <span class="text-[11px] font-bold mt-0.5">레시피 보관함</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- 스캔 결과 검수 모달 -->
+  <div id="review-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-end sm:items-center justify-center sm:p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col">
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div>
+          <h3 class="font-extrabold text-base text-white">🧾 인식된 식재료 확인</h3>
+          <p class="text-[11px] text-slate-400">필요 없는 항목은 빼고 냉장고에 한 번에 등록하세요.</p>
+        </div>
+        <button onclick="closeReviewModal()" class="text-slate-400 hover:text-white text-xl p-1">✕</button>
+      </div>
+      <div id="review-items-box" class="p-4 overflow-y-auto space-y-2.5 flex-1"></div>
+      <div class="p-4 border-t border-slate-800 flex space-x-2">
+        <button onclick="closeReviewModal()" class="flex-1 bg-slate-800 text-slate-300 py-3 rounded-xl font-bold text-xs">취소</button>
+        <button onclick="confirmReviewedItems()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-extrabold text-xs">냉장고에 모두 등록</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 직접 추가 모달 -->
+  <div id="add-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <h3 class="font-extrabold text-base text-white">➕ 식재료 직접 추가</h3>
+        <button onclick="closeAddModal()" class="text-slate-400 text-lg">✕</button>
+      </div>
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-bold text-slate-300 mb-1">식재료 이름</label>
+          <input type="text" id="add-name" placeholder="예: 두부 1모, 대파, 계란" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white outline-none focus:border-emerald-500">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-bold text-slate-300 mb-1">보관 방식</label>
+            <select id="add-storage" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white outline-none">
+              <option value="냉장">❄️ 냉장</option>
+              <option value="냉동">🧊 냉동</option>
+              <option value="실온">🧺 실온</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-300 mb-1">소비기한</label>
+            <input type="date" id="add-expiry" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white outline-none">
+          </div>
+        </div>
+        <div>
+          <label class="block font-bold text-slate-300 mb-1">수량 / 메모</label>
+          <input type="text" id="add-qty" placeholder="예: 1팩, 반 남은 것" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white outline-none">
+        </div>
+      </div>
+      <button onclick="saveManualItem()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-extrabold text-xs">등록하기</button>
+    </div>
+  </div>
+
+  <!-- 설정 모달 (Gemini API 키 보관) -->
+  <div id="settings-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <h3 class="font-extrabold text-base text-white">⚙️ Gemini AI 설정</h3>
+        <button onclick="closeSettings()" class="text-slate-400 text-lg">✕</button>
+      </div>
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-bold text-slate-300 mb-1">Gemini API Key</label>
+          <input type="password" id="input-api-key" placeholder="AIzaSy..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white outline-none focus:border-emerald-500">
+          <p class="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+            Google AI Studio에서 무료 발급받은 키를 입력하세요. 키는 서버로 전송되지 않고 내 스마트폰 브라우저에만 안전하게 저장됩니다.
+          </p>
+        </div>
+        <div>
+          <label class="block font-bold text-slate-300 mb-1">사용 모델</label>
+          <select id="input-model" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white outline-none">
+            <option value="gemini-2.5-flash">gemini-2.5-flash (추천 · 빠르고 정확)</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex space-x-2">
+        <button onclick="clearAllData()" class="flex-1 bg-rose-950/60 border border-rose-800/50 text-rose-300 py-2.5 rounded-xl font-bold text-xs">데이터 초기화</button>
+        <button onclick="saveSettings()" class="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl font-extrabold text-xs">저장하기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 토스트 알림 -->
+  <div id="toast" class="fixed top-16 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-700 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-2xl z-50 hidden transition"></div>
+
+  <script>
+    // 단일 파일 내장 PWA Manifest (Data URI)
+    (function initManifest() {
+      const manifest = {
+        name: "냉장고 레이더 - AI 소비기한 & 냉파",
+        short_name: "냉장고레이더",
+        start_url: ".",
+        display: "standalone",
+        background_color: "#020617",
+        theme_color: "#0f172a",
+        icons: [{
+          src: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%23059669'/><text x='50%25' y='55%25' dominant-baseline='middle' text-anchor='middle' font-size='56'>🥬</text></svg>",
+          sizes: "192x192",
+          type: "image/svg+xml"
+        }]
+      };
+      const el = document.getElementById('pwa-manifest');
+      if (el) el.href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifest));
+    })();
+
+    // 상태 관리
+    const STORE_ITEMS = 'fridge_radar_items_v1';
+    const STORE_SAVED = 'fridge_radar_saved_recipes_v1';
+    const STORE_KEY = 'fridge_radar_gemini_key';
+    const STORE_MODEL = 'fridge_radar_gemini_model';
+
+    let fridgeItems = JSON.parse(localStorage.getItem(STORE_ITEMS) || '[]');
+    let savedRecipes = JSON.parse(localStorage.getItem(STORE_SAVED) || '[]');
+    let apiKey = localStorage.getItem(STORE_KEY) || '';
+    let modelName = localStorage.getItem(STORE_MODEL) || 'gemini-2.5-flash';
+
+    let currentStorageFilter = 'ALL';
+    let selectedItemIds = new Set();
+    let activeRecipeFilters = new Set(['15분 컷']);
+    let pendingReviewItems = [];
+    let lastGeneratedRecipes = [];
+
+    const FILTER_OPTIONS = [
+      '15분 컷', '안 맵게', '단백질 위주', '에어프라이어', '한그릇 요리', '자취 간단식', '술안주'
+    ];
+
+    // 유틸리티
+    function escapeHtml(str) {
+      return String(str || '').replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[m]));
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.remove('hidden');
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => t.classList.add('hidden'), 2400);
+    }
+
+    function addDaysToToday(days) {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + Number(days || 5));
+      return d.toISOString().slice(0, 10);
+    }
+
+    function getDaysLeft(dateStr) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const target = new Date(dateStr + 'T00:00:00');
+      return Math.round((target - today) / (1000 * 60 * 60 * 24));
+    }
+
+    function saveState() {
+      localStorage.setItem(STORE_ITEMS, JSON.stringify(fridgeItems));
+      localStorage.setItem(STORE_SAVED, JSON.stringify(savedRecipes));
+    }
+
+    function updateApiDot() {
+      document.getElementById('api-dot').classList.toggle('hidden', Boolean(apiKey));
+    }
+
+    // 탭 전환
+    function switchTab(tab) {
+      ['fridge', 'recipe', 'saved'].forEach(t => {
+        document.getElementById(`view-${t}`).classList.toggle('hidden', t !== tab);
+        const btn = document.getElementById(`tab-${t}`);
+        btn.className = t === tab
+          ? 'flex flex-col items-center text-emerald-400'
+          : 'flex flex-col items-center text-slate-500';
+      });
+      if (tab === 'fridge') renderFridge();
+      if (tab === 'recipe') renderRecipeBuilder();
+      if (tab === 'saved') renderSavedRecipes();
+    }
+
+    // 필터 변경
+    function setStorageFilter(f) {
+      currentStorageFilter = f;
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        const active = btn.dataset.filter === f;
+        btn.className = active
+          ? 'filter-btn px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-600 text-white shrink-0'
+          : 'filter-btn px-3 py-1.5 rounded-full text-xs font-bold bg-slate-900 text-slate-400 border border-slate-800 shrink-0';
+      });
+      renderFridge();
+    }
+
+    // 냉장고 리스트 렌더링
+    function renderFridge() {
+      const sorted = [...fridgeItems].sort((a, b) => getDaysLeft(a.expiryDate) - getDaysLeft(b.expiryDate));
+      const urgentCount = sorted.filter(i => getDaysLeft(i.expiryDate) <= 2).length;
+      const soonCount = sorted.filter(i => { const d = getDaysLeft(i.expiryDate); return d >= 3 && d <= 5; }).length;
+
+      document.getElementById('stat-total').textContent = sorted.length;
+      document.getElementById('stat-urgent').textContent = urgentCount;
+      document.getElementById('stat-soon').textContent = soonCount;
+
+      const filtered = currentStorageFilter === 'ALL'
+        ? sorted
+        : sorted.filter(i => i.storage === currentStorageFilter);
+
+      const listEl = document.getElementById('fridge-list');
+      if (filtered.length === 0) {
+        listEl.innerHTML = `
+          <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-8 text-center space-y-1.5">
+            <p class="text-2xl">🧺</p>
+            <p class="text-xs font-bold text-slate-300">등록된 식재료가 아직 없어요</p>
+            <p class="text-[11px] text-slate-500">위에서 영수증을 찍거나 [✨ 데모 체험]을 눌러보세요.</p>
+          </div>`;
+      } else {
+        listEl.innerHTML = filtered.map(item => {
+          const d = getDaysLeft(item.expiryDate);
+          const isChecked = selectedItemIds.has(item.id);
+          let badgeClass = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+          let dLabel = `D-${d}`;
+          if (d < 0) { badgeClass = 'bg-rose-600 text-white border-rose-500'; dLabel = `D+${Math.abs(d)} 만료`; }
+          else if (d === 0) { badgeClass = 'bg-rose-500/25 text-rose-300 border-rose-500/40'; dLabel = 'D-Day'; }
+          else if (d <= 2) { badgeClass = 'bg-rose-500/20 text-rose-300 border-rose-500/30'; }
+          else if (d <= 5) { badgeClass = 'bg-amber-500/20 text-amber-300 border-amber-500/30'; }
+
+          const storageIcon = item.storage === '냉동' ? '🧊' : item.storage === '실온' ? '🧺' : '❄️';
+
+          return `
+            <div class="bg-slate-900 border ${isChecked ? 'border-emerald-500 bg-emerald-950/20' : 'border-slate-800'} rounded-2xl p-3.5 transition">
+              <div class="flex items-start justify-between gap-2">
+                <label class="flex items-start space-x-3 cursor-pointer flex-1 overflow-hidden">
+                  <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleSelectItem('${item.id}')" class="mt-1 w-4 h-4 accent-emerald-500 rounded shrink-0">
+                  <div class="overflow-hidden">
+                    <div class="flex items-center space-x-1.5">
+                      <span class="font-extrabold text-sm text-white truncate">${escapeHtml(item.name)}</span>
+                      ${item.quantity ? `<span class="text-[11px] text-slate-400 shrink-0">${escapeHtml(item.quantity)}</span>` : ''}
+                    </div>
+                    <div class="flex items-center space-x-2 mt-1 text-[11px] text-slate-400">
+                      <span>${storageIcon} ${escapeHtml(item.storage)}</span>
+                      <span>·</span>
+                      <span>${item.expiryDate}까지</span>
+                    </div>
+                  </div>
+                </label>
+                <span class="text-[11px] font-extrabold px-2 py-0.5 rounded-lg border shrink-0 ${badgeClass}">${dLabel}</span>
+              </div>
+              <div class="flex items-center justify-end space-x-1.5 mt-2.5 pt-2 border-t border-slate-800/80">
+                ${item.storage !== '냉동' ? `<button onclick="moveToFreezer('${item.id}')" class="text-[11px] font-bold text-sky-300 bg-sky-500/10 px-2.5 py-1 rounded-lg active:scale-95">🧊 냉동(+30일)</button>` : ''}
+                <button onclick="extendDays('${item.id}', 3)" class="text-[11px] font-bold text-slate-300 bg-slate-800 px-2.5 py-1 rounded-lg active:scale-95">+3일</button>
+                <button onclick="consumeItem('${item.id}')" class="text-[11px] font-bold text-emerald-300 bg-emerald-500/15 px-2.5 py-1 rounded-lg active:scale-95">✓ 소비완료</button>
+              </div>
+            </div>`;
+        }).join('');
+      }
+
+      updateSelectedBar();
+    }
+
+    function toggleSelectItem(id) {
+      if (selectedItemIds.has(id)) selectedItemIds.delete(id);
+      else selectedItemIds.add(id);
+      renderFridge();
+    }
+
+    function updateSelectedBar() {
+      const bar = document.getElementById('selected-bar');
+      const count = selectedItemIds.size;
+      if (count > 0 && !document.getElementById('view-fridge').classList.contains('hidden')) {
+        document.getElementById('selected-bar-text').textContent = `선택한 재료 ${count}개로 레시피 추천받기`;
+        bar.classList.remove('hidden');
+      } else {
+        bar.classList.add('hidden');
+      }
+    }
+
+    function selectUrgentItems(isRecipeTab = false) {
+      const urgent = fridgeItems.filter(i => getDaysLeft(i.expiryDate) <= 5);
+      if (urgent.length === 0) {
+        showToast('5일 이내 임박 재료가 없어요.');
+        return;
+      }
+      selectedItemIds = new Set(urgent.map(i => i.id));
+      showToast(`임박 재료 ${urgent.length}개를 자동 선택했어요.`);
+      if (isRecipeTab) renderRecipeBuilder();
+      else renderFridge();
+    }
+
+    function goToRecipeWithSelected() {
+      switchTab('recipe');
+    }
+
+    function consumeItem(id) {
+      fridgeItems = fridgeItems.filter(i => i.id !== id);
+      selectedItemIds.delete(id);
+      saveState();
+      renderFridge();
+      showToast('소비 완료 처리했어요!');
+    }
+
+    function extendDays(id, days) {
+      const target = fridgeItems.find(i => i.id === id);
+      if (!target) return;
+      const d = new Date(target.expiryDate + 'T00:00:00');
+      d.setDate(d.getDate() + days);
+      target.expiryDate = d.toISOString().slice(0, 10);
+      saveState();
+      renderFridge();
+      showToast(`소비기한을 ${days}일 연장했어요.`);
+    }
+
+    function moveToFreezer(id) {
+      const target = fridgeItems.find(i => i.id === id);
+      if (!target) return;
+      target.storage = '냉동';
+      const d = new Date();
+      d.setDate(d.getDate() + 30);
+      target.expiryDate = d.toISOString().slice(0, 10);
+      saveState();
+      renderFridge();
+      showToast('냉동 보관으로 옮기고 +30일 설정했어요.');
+    }
+
+    // ==================== 이미지 압축 & Gemini Vision 영수증 스캔 ====================
+    function compressImageToBase64(file, maxDim = 1024) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+          const img = new Image();
+          img.onload = () => {
+            let w = img.width, h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+              else { w = Math.round(w * maxDim / h); h = maxDim; }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            resolve(dataUrl.split(',')[1]);
+          };
+          img.onerror = reject;
+          img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function callGeminiAPI(parts) {
+      if (!apiKey) {
+        openSettings();
+        throw new Error('먼저 ⚙️ 설정에서 Gemini API 키를 입력해 주세요.');
+      }
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: { responseMimeType: 'application/json', temperature: 0.3 }
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error?.message || `API 오류 (${res.status})`);
+      }
+      const data = await res.json();
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const cleaned = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+      return JSON.parse(cleaned);
+    }
+
+    async function handleImageUpload(event) {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+
+      const loadingEl = document.getElementById('scan-loading');
+      loadingEl.classList.remove('hidden');
+
+      try {
+        const base64 = await compressImageToBase64(file);
+        const prompt = `이 사진은 마트 영수증 또는 장 본 식재료 사진입니다.
+비식품(봉투, 세제, 휴지 등)은 제외하고 식재료만 추출해서 아래 JSON 배열 형식으로만 응답하세요.
+[
+  {
+    "name": "식재료명 (브랜드명 빼고 깔끔하게, 예: 두부, 애호박, 돼지고기 앞다리살)",
+    "quantity": "수량 또는 중량 (알 수 없으면 빈 문자열)",
+    "storage": "냉장 또는 냉동 또는 실온",
+    "shelfLifeDays": 평균 권장 소비기한 일수(정수, 예: 두부 5, 대파 7, 삼겹살 3, 계란 21)
+  }
+]`;
+        const extracted = await callGeminiAPI([
+          { text: prompt },
+          { inlineData: { mimeType: 'image/jpeg', data: base64 } }
+        ]);
+
+        if (!Array.isArray(extracted) || extracted.length === 0) {
+          showToast('사진에서 식재료를 찾지 못했어요.');
+          return;
+        }
+        openReviewModal(extracted);
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        loadingEl.classList.add('hidden');
+      }
+    }
+
+    // API 키 없이 써볼 수 있는 데모 스캔
+    function loadDemoReceipt() {
+      const demo = [
+        { name: '찌개용 두부', quantity: '1모', storage: '냉장', shelfLifeDays: 2 },
+        { name: '대파', quantity: '1단', storage: '냉장', shelfLifeDays: 5 },
+        { name: '돼지고기 앞다리살', quantity: '400g', storage: '냉장', shelfLifeDays: 1 },
+        { name: '계란', quantity: '10구', storage: '냉장', shelfLifeDays: 14 },
+        { name: '애호박', quantity: '1개', storage: '냉장', shelfLifeDays: 4 }
+      ];
+      openReviewModal(demo);
+    }
+
+    function openReviewModal(items) {
+      pendingReviewItems = items.map((it, idx) => ({
+        tempId: idx,
+        checked: true,
+        name: it.name || '식재료',
+        quantity: it.quantity || '',
+        storage: ['냉장', '냉동', '실온'].includes(it.storage) ? it.storage : '냉장',
+        expiryDate: addDaysToToday(it.shelfLifeDays || 5)
+      }));
+      renderReviewItems();
+      document.getElementById('review-modal').classList.remove('hidden');
+    }
+
+    function renderReviewItems() {
+      const box = document.getElementById('review-items-box');
+      box.innerHTML = pendingReviewItems.map((it, idx) => `
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
+          <div class="flex items-center space-x-2">
+            <input type="checkbox" ${it.checked ? 'checked' : ''} onchange="pendingReviewItems[${idx}].checked = this.checked" class="w-4 h-4 accent-emerald-500">
+            <input type="text" value="${escapeHtml(it.name)}" onchange="pendingReviewItems[${idx}].name = this.value" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-bold outline-none">
+          </div>
+          <div class="grid grid-cols-3 gap-1.5 pl-6">
+            <select onchange="pendingReviewItems[${idx}].storage = this.value" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200 outline-none">
+              <option value="냉장" ${it.storage==='냉장'?'selected':''}>❄️ 냉장</option>
+              <option value="냉동" ${it.storage==='냉동'?'selected':''}>🧊 냉동</option>
+              <option value="실온" ${it.storage==='실온'?'selected':''}>🧺 실온</option>
+            </select>
+            <input type="date" value="${it.expiryDate}" onchange="pendingReviewItems[${idx}].expiryDate = this.value" class="col-span-2 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200 outline-none">
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function closeReviewModal() {
+      document.getElementById('review-modal').classList.add('hidden');
+    }
+
+    function confirmReviewedItems() {
+      const chosen = pendingReviewItems.filter(it => it.checked && it.name.trim());
+      chosen.forEach(it => {
+        fridgeItems.push({
+          id: 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+          name: it.name.trim(),
+          quantity: it.quantity,
+          storage: it.storage,
+          expiryDate: it.expiryDate
+        });
+      });
+      saveState();
+      closeReviewModal();
+      renderFridge();
+      showToast(`${chosen.length}개 식재료를 냉장고에 등록했어요!`);
+    }
+
+    // ==================== 직접 추가 ====================
+    function openAddModal() {
+      document.getElementById('add-name').value = '';
+      document.getElementById('add-qty').value = '';
+      document.getElementById('add-storage').value = '냉장';
+      document.getElementById('add-expiry').value = addDaysToToday(7);
+      document.getElementById('add-modal').classList.remove('hidden');
+    }
+    function closeAddModal() { document.getElementById('add-modal').classList.add('hidden'); }
+    function saveManualItem() {
+      const name = document.getElementById('add-name').value.trim();
+      if (!name) return alert('식재료 이름을 입력해 주세요.');
+      fridgeItems.push({
+        id: 'item_' + Date.now(),
+        name,
+        quantity: document.getElementById('add-qty').value.trim(),
+        storage: document.getElementById('add-storage').value,
+        expiryDate: document.getElementById('add-expiry').value || addDaysToToday(7)
+      });
+      saveState();
+      closeAddModal();
+      renderFridge();
+      showToast(`${name} 등록 완료!`);
+    }
+
+    // ==================== AI 냉장고 파먹기 ====================
+    function renderRecipeBuilder() {
+      const ingBox = document.getElementById('recipe-ingredient-chips');
+      const sorted = [...fridgeItems].sort((a, b) => getDaysLeft(a.expiryDate) - getDaysLeft(b.expiryDate));
+
+      if (sorted.length === 0) {
+        ingBox.innerHTML = `<p class="text-xs text-slate-500">먼저 소비기한 레이더에 식재료를 등록해 주세요.</p>`;
+      } else {
+        ingBox.innerHTML = sorted.map(it => {
+          const active = selectedItemIds.has(it.id);
+          const d = getDaysLeft(it.expiryDate);
+          const dText = d <= 0 ? '오늘!' : `D-${d}`;
+          return `
+            <button onclick="toggleRecipeIng('${it.id}')" class="px-3 py-1.5 rounded-full text-xs font-bold border transition ${active ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-300'}">
+              ${escapeHtml(it.name)} <span class="text-[10px] opacity-80">(${dText})</span>
+            </button>`;
+        }).join('');
+      }
+
+      const filterBox = document.getElementById('recipe-filter-chips');
+      filterBox.innerHTML = FILTER_OPTIONS.map(opt => {
+        const active = activeRecipeFilters.has(opt);
+        return `
+          <button onclick="toggleRecipeFilter('${opt}')" class="px-2.5 py-1 rounded-lg text-xs font-bold border transition ${active ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}">
+            ${opt}
+          </button>`;
+      }).join('');
+    }
+
+    function toggleRecipeIng(id) {
+      if (selectedItemIds.has(id)) selectedItemIds.delete(id);
+      else selectedItemIds.add(id);
+      renderRecipeBuilder();
+    }
+
+    function toggleRecipeFilter(opt) {
+      if (activeRecipeFilters.has(opt)) activeRecipeFilters.delete(opt);
+      else activeRecipeFilters.add(opt);
+      renderRecipeBuilder();
+    }
+
+    async function generateRecipes() {
+      const chosenItems = fridgeItems.filter(i => selectedItemIds.has(i.id));
+      if (chosenItems.length === 0) {
+        showToast('사용할 식재료를 1개 이상 선택해 주세요!');
+        return;
+      }
+
+      const loading = document.getElementById('recipe-loading');
+      const resultsBox = document.getElementById('recipe-results');
+      loading.classList.remove('hidden');
+      resultsBox.innerHTML = '';
+
+      const ingNames = chosenItems.map(i => i.name).join(', ');
+      const filters = [...activeRecipeFilters].join(', ') || '제한 없음';
+
+      // API 키가 없을 경우 데모 레시피 제공
+      if (!apiKey) {
+        setTimeout(() => {
+          loading.classList.add('hidden');
+          lastGeneratedRecipes = [
+            {
+              title: `${chosenItems[0].name} 간장 볶음 덮밥 (데모)`,
+              time: '12분',
+              difficulty: '쉬움',
+              usedIngredients: chosenItems.slice(0, 3).map(i => i.name),
+              seasonings: ['간장 2스푼', '설탕 0.5스푼', '다진마늘 0.5스푼', '참기름'],
+              steps: [
+                '선택한 재료를 한입 크기로 썰어 준비합니다.',
+                '팬에 식용유를 두르고 센 불에서 재료를 3분간 볶습니다.',
+                '간장, 설탕, 다진마늘을 넣고 윤기 나게 2분 더 볶은 뒤 밥 위에 올립니다.'
+              ],
+              tip: '⚙️ 설정에서 Gemini API 키를 등록하면 선택한 재료와 필터에 딱 맞는 실시간 AI 레시피가 생성됩니다.'
+            }
+          ];
+          renderRecipeCards(lastGeneratedRecipes, resultsBox, false);
+        }, 700);
+        return;
+      }
+
+      try {
+        const prompt = `당신은 현실적인 한국 집밥 요리사입니다.
+냉장고 재료: [${ingNames}]
+조건 필터: [${filters}]
+집에 기본 양념(간장, 고추장, 된장, 설탕, 소금, 식용유, 다진마늘, 후추, 참기름 등)은 있다고 가정하고, 위 재료를 최대한 활용해 만들기 좋은 현실적인 레시피 3가지를 아래 JSON 배열 형식으로만 응답하세요.
+[
+  {
+    "title": "요리 이름",
+    "time": "조리 시간 (예: 15분)",
+    "difficulty": "쉬움 또는 보통",
+    "usedIngredients": ["사용한 냉장고 재료1", "재료2"],
+    "seasonings": ["필요한 기본 양념/부재료"],
+    "steps": ["1단계 설명", "2단계 설명", "3단계 설명"],
+    "tip": "맛있게 만드는 한 줄 팁"
+  }
+]`;
+        const recipes = await callGeminiAPI([{ text: prompt }]);
+        lastGeneratedRecipes = Array.isArray(recipes) ? recipes : [];
+        renderRecipeCards(lastGeneratedRecipes, resultsBox, false);
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        loading.classList.add('hidden');
+      }
+    }
+
+    function renderRecipeCards(recipes, container, isSavedView) {
+      if (!recipes || recipes.length === 0) {
+        container.innerHTML = `<div class="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-xs text-slate-400">${isSavedView ? '저장된 레시피가 아직 없어요.' : '추천 결과가 없습니다.'}</div>`;
+        return;
+      }
+      container.innerHTML = recipes.map((r, idx) => {
+        const isSaved = savedRecipes.some(s => s.title === r.title);
+        return `
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <h3 class="font-extrabold text-base text-white">${escapeHtml(r.title)}</h3>
+                <div class="flex items-center space-x-2 mt-1 text-[11px] text-slate-400">
+                  <span class="bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded font-bold">⏱️ ${escapeHtml(r.time)}</span>
+                  <span class="bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-bold">${escapeHtml(r.difficulty)}</span>
+                </div>
+              </div>
+              <button onclick="${isSavedView ? `removeSavedRecipe(${idx})` : `toggleSaveRecipe(${idx})`}" class="text-xs font-bold px-2.5 py-1.5 rounded-xl border ${isSaved ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' : 'bg-slate-800 border-slate-700 text-slate-300'} shrink-0">
+                ${isSavedView ? '삭제' : (isSaved ? '⭐ 저장됨' : '☆ 저장')}
+              </button>
+            </div>
+
+            <div class="text-xs space-y-1.5 bg-slate-950 rounded-xl p-3 border border-slate-800/80">
+              <p><span class="text-emerald-400 font-bold">냉장고 재료:</span> <span class="text-slate-200">${(r.usedIngredients || []).map(escapeHtml).join(', ')}</span></p>
+              <p><span class="text-slate-400 font-bold">기본 양념:</span> <span class="text-slate-300">${(r.seasonings || []).map(escapeHtml).join(', ')}</span></p>
+            </div>
+
+            <ol class="space-y-1.5 text-xs text-slate-200 list-decimal list-inside leading-relaxed">
+              ${(r.steps || []).map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+            </ol>
+
+            ${r.tip ? `<p class="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">💡 ${escapeHtml(r.tip)}</p>` : ''}
+          </div>`;
+      }).join('');
+    }
+
+    function toggleSaveRecipe(idx) {
+      const r = lastGeneratedRecipes[idx];
+      if (!r) return;
+      const existIdx = savedRecipes.findIndex(s => s.title === r.title);
+      if (existIdx >= 0) {
+        savedRecipes.splice(existIdx, 1);
+        showToast('보관함에서 제거했어요.');
+      } else {
+        savedRecipes.unshift(r);
+        showToast('레시피 보관함에 저장했어요!');
+      }
+      saveState();
+      renderRecipeCards(lastGeneratedRecipes, document.getElementById('recipe-results'), false);
+    }
+
+    function removeSavedRecipe(idx) {
+      savedRecipes.splice(idx, 1);
+      saveState();
+      renderSavedRecipes();
+      showToast('레시피를 삭제했어요.');
+    }
+
+    function renderSavedRecipes() {
+      document.getElementById('saved-count-label').textContent = `${savedRecipes.length}개`;
+      renderRecipeCards(savedRecipes, document.getElementById('saved-recipes-list'), true);
+    }
+
+    // ==================== 설정 모달 ====================
+    function openSettings() {
+      document.getElementById('input-api-key').value = apiKey;
+      document.getElementById('input-model').value = modelName;
+      document.getElementById('settings-modal').classList.remove('hidden');
+    }
+    function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); }
+    function saveSettings() {
+      apiKey = document.getElementById('input-api-key').value.trim();
+      modelName = document.getElementById('input-model').value;
+      localStorage.setItem(STORE_KEY, apiKey);
+      localStorage.setItem(STORE_MODEL, modelName);
+      updateApiDot();
+      closeSettings();
+      showToast('설정이 저장되었습니다.');
+    }
+    function clearAllData() {
+      if (!confirm('저장된 식재료와 레시피를 모두 삭제할까요?')) return;
+      fridgeItems = [];
+      savedRecipes = [];
+      selectedItemIds.clear();
+      saveState();
+      closeSettings();
+      renderFridge();
+      showToast('모든 데이터를 초기화했어요.');
+    }
+
+    // 초기화
+    updateApiDot();
+    renderFridge();
+  </script>
+</body>
+</html>
